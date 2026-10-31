@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VideoRAG</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎞️%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Onest:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { theme: { extend: { fontFamily: {
+  sans: ['Onest', 'system-ui', 'sans-serif'],
+  display: ['"Bricolage Grotesque"', 'Onest', 'sans-serif'] } } } };
+</script>
+<script src="https://unpkg.com/lucide@0.462.0/dist/umd/lucide.min.js"></script>
+<style>
+  :root { --ink:#070a12; --text:#e8ecf4; --muted:#8c95a8; --accent:#7c9cff; --time:#f5b544; --ok:#5eead4; --bad:#fda4af; }
+  html, body { height:100%; }
+  body { background:var(--ink); color:var(--text); font-family:Onest,system-ui,sans-serif; overflow:hidden; }
+  body::before, body::after { content:""; position:fixed; z-index:-1; border-radius:50%; filter:blur(110px); opacity:.5; pointer-events:none; }
+  body::before { width:520px; height:520px; left:-120px; top:-140px; background:#2b3a8f; }
+  body::after { width:460px; height:460px; right:-100px; bottom:-120px; background:#0f6b64; opacity:.38; }
+  .glass { background:rgba(255,255,255,.045); backdrop-filter:blur(18px) saturate(140%); -webkit-backdrop-filter:blur(18px) saturate(140%); border:1px solid rgba(255,255,255,.09); }
+  .glass-strong { background:rgba(14,18,32,.72); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); border:1px solid rgba(255,255,255,.1); }
+  .field { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:12px; color:var(--text); transition:border-color .15s, background .15s; }
+  .field::placeholder { color:#6b748a; }
+  .field:focus { outline:none; border-color:var(--accent); background:rgba(255,255,255,.08); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .btn-primary { background:var(--accent); color:#0a1030; font-weight:600; border-radius:12px; transition:filter .15s, transform .15s; }
+  .btn-primary:hover:not(:disabled) { filter:brightness(1.08); }
+  .btn-primary:disabled { opacity:.55; cursor:not-allowed; }
+  .spin { width:16px; height:16px; border-radius:50%; border:2px solid rgba(10,16,48,.3); border-top-color:#0a1030; animation:spin .7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .pill { display:inline-flex; align-items:center; gap:4px; padding:1px 8px 1px 6px; margin:0 1px; border-radius:999px; font-size:.78rem; font-weight:600; font-variant-numeric:tabular-nums; color:var(--time); background:rgba(245,181,68,.12); border:1px solid rgba(245,181,68,.35); cursor:pointer; vertical-align:baseline; transition:background .15s, transform .15s; }
+  .pill:hover { background:rgba(245,181,68,.24); transform:translateY(-1px); }
+  .pill svg { width:11px; height:11px; }
+  .prose-a p { margin:0 0 .7em; } .prose-a p:last-child { margin-bottom:0; }
+  .prose-a ul, .prose-a ol { margin:0 0 .7em 1.2em; padding:0; } .prose-a ul { list-style:disc; } .prose-a ol { list-style:decimal; }
+  .prose-a li { margin:.2em 0; } .prose-a strong { color:#fff; font-weight:600; }
+  .prose-a code { background:rgba(255,255,255,.08); padding:1px 5px; border-radius:6px; font-size:.88em; }
+  .prose-a h3, .prose-a h4 { font-family:"Bricolage Grotesque",Onest,sans-serif; font-weight:700; margin:.6em 0 .3em; }
+  .dots span { display:inline-block; width:6px; height:6px; margin-right:4px; border-radius:50%; background:var(--muted); animation:blink 1.1s infinite ease-in-out; }
+  .dots span:nth-child(2) { animation-delay:.18s; } .dots span:nth-child(3) { animation-delay:.36s; }
+  @keyframes blink { 0%,80%,100% { opacity:.25; } 40% { opacity:1; } }
+  .scroll { scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.18) transparent; }
+  .clamp2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .tnum { font-variant-numeric:tabular-nums; }
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
+</style>
+</head>
+<body class="flex">
+
+<!-- mobile top bar -->
+<header class="lg:hidden fixed top-0 inset-x-0 z-30 h-12 glass-strong flex items-center gap-3 px-3">
+  <button id="menuBtn" class="p-2 rounded-lg hover:bg-white/10" aria-label="Open library"><i data-lucide="menu" class="w-5 h-5"></i></button>
+  <span class="font-display font-bold text-lg">VideoRAG</span>
+</header>
+<div id="backdrop" class="fixed inset-0 z-30 bg-black/60 hidden lg:hidden"></div>
+
+<!-- sidebar -->
+<aside id="sidebar" class="glass-strong fixed lg:static inset-y-0 left-0 z-40 w-[min(92vw,380px)] lg:w-[370px] shrink-0 -translate-x-full lg:translate-x-0 transition-transform duration-200 flex flex-col">
+  <div class="px-5 pt-5 pb-4 flex items-center gap-3">
+    <div class="w-9 h-9 rounded-xl grid place-items-center" style="background:linear-gradient(135deg,#7c9cff,#5eead4)"><i data-lucide="clapperboard" class="w-5 h-5 text-slate-900"></i></div>
+    <div>
+      <h1 class="font-display font-bold text-xl leading-none">VideoRAG</h1>
+      <p class="text-xs text-[var(--muted)] mt-1">Ask questions, jump to the moment</p>
+    </div>
+  </div>
+
+  <form id="indexForm" class="px-5 space-y-3">
+    <label for="urlInput" class="text-sm font-medium">YouTube video or playlist link</label>
+    <input id="urlInput" type="url" required placeholder="https://www.youtube.com/playlist?list=…" class="field w-full px-3.5 py-2.5 text-sm" autocomplete="off">
+    <details class="text-xs text-[var(--muted)]">
+      <summary class="cursor-pointer select-none hover:text-white">Collection</summary>
+      <input id="collectionInput" type="text" pattern="[A-Za-z0-9_\-]{1,64}" class="field w-full px-3 py-2 mt-2 text-sm" aria-label="Collection name">
+    </details>
+    <button id="indexBtn" type="submit" class="btn-primary w-full py-2.5 text-sm flex items-center justify-center gap-2">
+      <i data-lucide="database-zap" class="w-4 h-4"></i><span>Process &amp; index</span>
+    </button>
+  </form>
+
+  <div id="progressWrap" class="px-5 mt-4 hidden">
+    <div class="flex justify-between text-xs text-[var(--muted)] mb-1.5"><span>Indexing</span><span id="progressText" class="tnum">0/0</span></div>
+    <div class="h-1.5 rounded-full bg-white/10 overflow-hidden"><div id="progressBar" class="h-full rounded-full transition-all duration-300" style="width:0;background:linear-gradient(90deg,#7c9cff,#5eead4)"></div></div>
+    <div id="logBox" class="scroll mt-3 max-h-40 overflow-y-auto rounded-xl bg-black/30 border border-white/5 p-3 text-xs leading-relaxed space-y-1" aria-live="polite"></div>
+  </div>
+
+  <div class="px-5 mt-5 mb-2 flex items-center justify-between">
+    <h2 class="text-sm font-semibold">Indexed videos</h2>
+    <span id="libCount" class="text-xs text-[var(--muted)] tnum"></span>
+  </div>
+  <div id="library" class="scroll flex-1 min-h-0 overflow-y-auto px-3 pb-3 space-y-2"></div>
+
+  <footer class="px-5 py-3 border-t border-white/10 text-xs text-[var(--muted)] space-y-1">
+    <div class="flex items-center gap-2"><span id="qdDot" class="w-2 h-2 rounded-full bg-slate-500"></span><span id="qdText">Checking Qdrant…</span></div>
+    <div class="flex items-center gap-2"><span id="llmDot" class="w-2 h-2 rounded-full bg-slate-500"></span><span id="llmText">Checking model…</span></div>
+  </footer>
+</aside>
+
+<!-- main -->
+<main class="flex-1 min-w-0 h-full flex flex-col lg:flex-row pt-12 lg:pt-0">
+  <section class="flex-1 min-w-0 min-h-0 flex flex-col">
+    <div id="feed" class="scroll flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-6">
+      <div id="thread" class="max-w-3xl mx-auto space-y-5">
+        <div id="emptyState" class="text-center pt-[12vh]">
+          <div class="mx-auto w-14 h-14 rounded-2xl glass grid place-items-center mb-5"><i data-lucide="messages-square" class="w-7 h-7 text-[var(--accent)]"></i></div>
+          <h2 class="font-display font-bold text-3xl">Ask your videos anything</h2>
+          <p class="text-[var(--muted)] mt-3 max-w-md mx-auto text-[15px] leading-relaxed">Paste a video or playlist link on the left and index it. Every answer links to the exact moment it came from.</p>
+        </div>
+      </div>
+    </div>
+    <form id="chatForm" class="px-4 sm:px-8 pb-5 pt-2">
+      <div class="max-w-3xl mx-auto glass rounded-2xl p-2 flex items-end gap-2">
+        <textarea id="chatInput" rows="1" maxlength="2000" placeholder="Ask a question about the indexed videos" class="scroll flex-1 bg-transparent resize-none px-3 py-2.5 text-[15px] placeholder:text-[#6b748a] focus:outline-none max-h-40" aria-label="Your question"></textarea>
+        <button id="sendBtn" type="submit" class="btn-primary h-10 w-10 grid place-items-center shrink-0" aria-label="Send"><i data-lucide="arrow-up" class="w-5 h-5"></i></button>
+      </div>
+    </form>
+  </section>
+
+  <aside id="playerPanel" class="hidden lg:flex order-first lg:order-none flex-col shrink-0 lg:w-[400px] xl:w-[440px] p-3 lg:p-4 lg:pl-0 gap-3 min-h-0">
+    <div class="glass rounded-2xl overflow-hidden">
+      <div class="relative aspect-video bg-black/60">
+        <div id="player" class="absolute inset-0"></div>
+        <div id="playerPlaceholder" class="absolute inset-0 grid place-items-center text-center px-6 text-sm text-[var(--muted)]">
+          <div><i data-lucide="play-circle" class="w-9 h-9 mx-auto mb-2 text-[var(--time)]"></i>Select a timestamp in an answer to play that moment here.</div>
+        </div>
+      </div>
+      <div class="px-4 py-3">
+        <p id="nowTitle" class="text-sm font-medium clamp2">Nothing playing</p>
+        <p id="nowTime" class="text-xs text-[var(--time)] tnum mt-0.5"></p>
+      </div>
+    </div>
+    <div class="glass rounded-2xl flex-1 min-h-0 hidden lg:flex flex-col">
+      <h3 class="px-4 pt-3 pb-2 text-sm font-semibold">Moments cited in the latest answer</h3>
+      <div id="moments" class="scroll flex-1 min-h-0 overflow-y-auto px-2 pb-2 space-y-1">
+        <p class="px-2 py-3 text-xs text-[var(--muted)]">Cited moments appear here after you ask a question.</p>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  const ICON = {
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>',
+    ext: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>',
+  };
+  const errMsg = d => Array.isArray(d) ? d.map(x => x.msg || JSON.stringify(x)).join('; ') : (typeof d === 'string' ? d : JSON.stringify(d));
+  const collection = () => ($('#collectionInput').value || '').trim();
+  const icons = () => window.lucide && lucide.createIcons();
+
+  // ── mobile drawer ──────────────────────────────────────────────────────────
+  const sidebar = $('#sidebar'), backdrop = $('#backdrop');
+  const toggleDrawer = open => { sidebar.classList.toggle('-translate-x-full', !open); backdrop.classList.toggle('hidden', !open); };
+  $('#menuBtn').addEventListener('click', () => toggleDrawer(true));
+  backdrop.addEventListener('click', () => toggleDrawer(false));
+
+  // ── status ─────────────────────────────────────────────────────────────────
+  async function loadStatus() {
+    try {
+      const d = await (await fetch('/api/status')).json();
+      if (!$('#collectionInput').value) $('#collectionInput').value = d.collection;
+      const q = d.qdrant;
+      $('#qdDot').style.background = q.connected ? 'var(--ok)' : 'var(--bad)';
+      $('#qdText').textContent = q.connected ? `Qdrant connected (${q.mode === 'remote' ? 'server' : 'local disk'})` : `Qdrant offline: ${q.error || 'unreachable'}`;
+      $('#llmDot').style.background = d.llm.configured ? 'var(--ok)' : 'var(--time)';
+      $('#llmText').textContent = d.llm.configured ? `${d.llm.provider} · ${d.llm.model}` : 'No LLM key: answers show raw passages';
+    } catch {
+      $('#qdDot').style.background = 'var(--bad)';
+      $('#qdText').textContent = 'Backend unreachable';
+    }
+  }
+
+  // ── library ────────────────────────────────────────────────────────────────
+  async function loadLibrary() {
+    const box = $('#library');
+    try {
+      const res = await fetch('/api/videos?collection=' + encodeURIComponent(collection()));
+      const data = await res.json();
+      if (!res.ok) throw new Error(errMsg(data.detail));
+      $('#libCount').textContent = data.length ? `${data.length} video${data.length > 1 ? 's' : ''}` : '';
+      if (!data.length) {
+        box.innerHTML = '<p class="px-3 py-6 text-center text-xs text-[var(--muted)]">Nothing indexed yet. Add a link above to start.</p>';
+        return;
+      }
+      box.innerHTML = data.map(v => `
+        <div class="glass rounded-xl p-2 flex gap-3 items-center">
+          <button data-play data-video="${esc(v.video_id)}" data-start="0" data-title="${esc(v.title)}" class="shrink-0 rounded-lg overflow-hidden w-24 aspect-video bg-black/40" aria-label="Play ${esc(v.title)}">
+            <img src="${esc(v.thumbnail)}" alt="" loading="lazy" class="w-full h-full object-cover">
+          </button>
+          <div class="min-w-0 flex-1">
+            <p class="text-[13px] font-medium clamp2" title="${esc(v.title)}">${esc(v.title)}</p>
+            <p class="text-xs text-[var(--muted)] mt-0.5 tnum">${v.chunk_count} chunks</p>
+          </div>
+          <button data-del="${esc(v.video_id)}" class="p-2 rounded-lg text-[var(--muted)] hover:text-[var(--bad)] hover:bg-white/10" aria-label="Remove ${esc(v.title)}">${ICON.trash}</button>
+        </div>`).join('');
+    } catch (e) {
+      box.innerHTML = `<p class="px-3 py-6 text-center text-xs" style="color:var(--bad)">${esc(e.message)}</p>`;
+    }
+  }
+  $('#library').addEventListener('click', async e => {
+    const del = e.target.closest('[data-del]');
+    if (!del) return;
+    if (!confirm('Remove this video from the index?')) return;
+    await fetch(`/api/videos/${encodeURIComponent(del.dataset.del)}?collection=${encodeURIComponent(collection())}`, { method: 'DELETE' });
+    loadLibrary();
+  });
+
+  // ── indexing ───────────────────────────────────────────────────────────────
+  const logBox = $('#logBox');
+  function addLog(msg, level = 'info') {
+    const colors = { info: 'var(--muted)', ok: 'var(--ok)', warn: 'var(--time)', error: 'var(--bad)' };
+    const row = document.createElement('div');
+    row.style.color = colors[level] || colors.info;
+    row.textContent = msg;
+    logBox.appendChild(row);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+  function setProgress(done, total) {
+    $('#progressText').textContent = `${done}/${total}`;
+    $('#progressBar').style.width = total ? `${Math.round(done / total * 100)}%` : '0';
+  }
+  function setIndexing(on) {
+    const b = $('#indexBtn');
+    b.disabled = on;
+    b.innerHTML = on ? '<span class="spin"></span><span>Indexing…</span>' : '<i data-lucide="database-zap" class="w-4 h-4"></i><span>Process &amp; index</span>';
+    if (!on) icons();
+  }
+
+  $('#indexForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const url = $('#urlInput').value.trim();
+    if (!url) return;
+    setIndexing(true);
+    $('#progressWrap').classList.remove('hidden');
+    logBox.innerHTML = '';
+    setProgress(0, 0);
+    try {
+      const res = await fetch('/api/index/stream', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, collection: collection() || null }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(errMsg(body.detail) || `Request failed (${res.status})`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      const handle = line => {
+        if (!line.trim()) return;
+        const ev = JSON.parse(line);
+        if (ev.type === 'log') addLog(ev.message, ev.level);
+        else if (ev.type === 'progress') setProgress(ev.done, ev.total);
+        else if (ev.type === 'error') addLog(ev.message, 'error');
+        else if (ev.type === 'result') loadLibrary();
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        lines.forEach(handle);
+      }
+      handle(buf);
+    } catch (err) {
+      addLog(err.message, 'error');
+    } finally {
+      setIndexing(false);
+      loadStatus();
+    }
+  });
+
+  // ── YouTube player ─────────────────────────────────────────────────────────
+  let player = null, playerReady = false, pending = null, currentVideo = null;
+  let ytResolve; const ytReady = new Promise(r => ytResolve = r);
+  window.onYouTubeIframeAPIReady = () => ytResolve();
+  const yt = document.createElement('script');
+  yt.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(yt);
+
+  function applyPlay(s) {
+    if (currentVideo === s.video_id) { player.seekTo(s.start, true); player.playVideo(); }
+    else { player.loadVideoById({ videoId: s.video_id, startSeconds: s.start }); }
+    currentVideo = s.video_id;
+  }
+  async function playAt(s) {
+    $('#playerPanel').classList.remove('hidden');
+    $('#playerPlaceholder').classList.add('hidden');
+    $('#nowTitle').textContent = s.title || 'Playing';
+    const t = Math.floor(s.start);
+    $('#nowTime').textContent = 'Starts at ' + (t >= 3600 ? `${Math.floor(t / 3600)}:` : '') + String(Math.floor(t % 3600 / 60)).padStart(t >= 3600 ? 2 : 2, '0') + ':' + String(t % 60).padStart(2, '0');
+    document.querySelectorAll('#moments [data-play]').forEach(b => b.classList.toggle('bg-white/10', b.dataset.video === s.video_id && +b.dataset.start === s.start));
+    await ytReady;
+    if (!player) {
+      currentVideo = s.video_id;
+      player = new YT.Player('player', {
+        videoId: s.video_id, width: '100%', height: '100%',
+        playerVars: { start: Math.floor(s.start), autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1, origin: location.origin },
+        events: { onReady: () => { playerReady = true; if (pending) { applyPlay(pending); pending = null; } } },
+      });
+      return;
+    }
+    if (!playerReady) { pending = s; return; }
+    applyPlay(s);
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-play]');
+    if (!b) return;
+    playAt({ video_id: b.dataset.video, start: Number(b.dataset.start) || 0, title: b.dataset.title });
+    if (window.innerWidth < 1024) toggleDrawer(false);
+  });
+
+  // ── answer rendering ───────────────────────────────────────────────────────
+  function pillHtml(s) {
+    return `<button type="button" class="pill" data-play data-video="${esc(s.video_id)}" data-start="${s.start}" data-title="${esc(s.title)}" title="${esc(s.title)}">${ICON.play}${esc(s.timestamp)}</button>`;
+  }
+  function renderAnswer(text, sources) {
+    const byId = {}; sources.forEach(s => byId[s.id] = s);
+    const inline = raw => esc(raw)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\[((?:S\d+)(?:\s*[,;]\s*S\d+)*)\]/g, (m, g) => g.split(/\s*[,;]\s*/).map(id => byId[id] ? pillHtml(byId[id]) : '').join(' '));
+    let html = '', list = null;
+    const close = () => { if (list) { html += `</${list}>`; list = null; } };
+    for (const line of text.split('\n')) {
+      const ul = line.match(/^\s*[-*•]\s+(.*)/), ol = line.match(/^\s*\d+[.)]\s+(.*)/), h = line.match(/^#{1,4}\s+(.*)/);
+      if (ul || ol) {
+        const tag = ul ? 'ul' : 'ol';
+        if (list !== tag) { close(); html += `<${tag}>`; list = tag; }
+        html += `<li>${inline((ul || ol)[1])}</li>`;
+      } else if (h) { close(); html += `<h3>${inline(h[1])}</h3>`; }
+      else if (!line.trim()) { close(); }
+      else { close(); html += `<p>${inline(line)}</p>`; }
+    }
+    close();
+    return html;
+  }
+  function sourceCard(s) {
+    return `
+      <div class="glass rounded-xl p-2.5 flex gap-3 ${s.cited ? 'border-l-2' : ''}" ${s.cited ? 'style="border-left-color:var(--time)"' : ''}>
+        <button data-play data-video="${esc(s.video_id)}" data-start="${s.start}" data-title="${esc(s.title)}" class="relative shrink-0 w-28 aspect-video rounded-lg overflow-hidden bg-black/40" aria-label="Play ${esc(s.title)} at ${esc(s.timestamp)}">
+          <img src="${esc(s.thumbnail)}" alt="" loading="lazy" class="w-full h-full object-cover">
+          <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/75 text-[11px] font-semibold tnum" style="color:var(--time)">${esc(s.timestamp)}</span>
+        </button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[13px] font-medium clamp2">${esc(s.title)}</p>
+          <p class="text-xs text-[var(--muted)] mt-0.5 tnum">${esc(s.timestamp)} – ${esc(s.end_timestamp)} · match ${(s.score * 100).toFixed(0)}%</p>
+          <p class="text-xs text-[#aab2c4] mt-1 clamp2">${esc(s.text)}</p>
+          <div class="mt-1.5 flex gap-3 text-xs">
+            <button data-play data-video="${esc(s.video_id)}" data-start="${s.start}" data-title="${esc(s.title)}" class="font-semibold hover:underline" style="color:var(--accent)">Play here</button>
+            <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-[var(--muted)] hover:text-white">Open on YouTube ${ICON.ext}</a>
+          </div>
+        </div>
+      </div>`;
+  }
+  function sourcesHtml(sources) {
+    if (!sources.length) return '';
+    const cited = sources.filter(s => s.cited);
+    const main = cited.length ? cited : sources.slice(0, 3);
+    const rest = sources.filter(s => !main.includes(s));
+    return `<div class="mt-3 space-y-2">${main.map(sourceCard).join('')}</div>` +
+      (rest.length ? `<details class="mt-3 text-xs text-[var(--muted)]"><summary class="cursor-pointer select-none hover:text-white">${rest.length} more related passage${rest.length > 1 ? 's' : ''}</summary><div class="mt-2 space-y-2">${rest.map(sourceCard).join('')}</div></details>` : '');
+  }
+  function updateMoments(sources) {
+    const cited = sources.filter(s => s.cited);
+    const list = cited.length ? cited : sources.slice(0, 3);
+    $('#moments').innerHTML = list.length ? list.map(s => `
+      <button data-play data-video="${esc(s.video_id)}" data-start="${s.start}" data-title="${esc(s.title)}" class="w-full text-left flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/10">
+        <span class="pill pointer-events-none">${ICON.play}${esc(s.timestamp)}</span>
+        <span class="text-xs clamp2 flex-1">${esc(s.title)}</span>
+      </button>`).join('') : '<p class="px-2 py-3 text-xs text-[var(--muted)]">No moments to show.</p>';
+  }
+
+  // ── chat ───────────────────────────────────────────────────────────────────
+  const feed = $('#feed'), thread = $('#thread'), input = $('#chatInput');
+  let busy = false;
+  const nearBottom = () => feed.scrollHeight - feed.scrollTop - feed.clientHeight < 140;
+  const toBottom = () => { feed.scrollTop = feed.scrollHeight; };
+
+  function addUser(text) {
+    const d = document.createElement('div');
+    d.className = 'flex justify-end';
+    d.innerHTML = `<div class="glass rounded-2xl rounded-br-md px-4 py-2.5 max-w-[85%] text-[15px] whitespace-pre-wrap">${esc(text)}</div>`;
+    thread.appendChild(d);
+  }
+  function addAssistant() {
+    const d = document.createElement('div');
+    d.className = 'flex gap-3';
+    d.innerHTML = `<div class="w-8 h-8 shrink-0 rounded-lg grid place-items-center mt-0.5" style="background:linear-gradient(135deg,#7c9cff,#5eead4)"><i data-lucide="sparkles" class="w-4 h-4 text-slate-900"></i></div>
+      <div class="min-w-0 flex-1"><div class="body prose-a text-[15px] leading-relaxed"></div><div class="extra"></div></div>`;
+    thread.appendChild(d);
+    icons();
+    return { body: $('.body', d), extra: $('.extra', d) };
+  }
+  function reveal(el, text, sources) {
+    return new Promise(resolve => {
+      const parts = text.split(/(\s+)/);
+      let i = 0;
+      const tick = () => {
+        i = Math.min(parts.length, i + 4);
+        const stick = nearBottom();
+        el.innerHTML = renderAnswer(parts.slice(0, i).join(''), sources);
+        if (stick) toBottom();
+        if (i >= parts.length) resolve(); else setTimeout(tick, 16);
+      };
+      tick();
+    });
+  }
+
+  async function send() {
+    const q = input.value.trim();
+    if (!q || busy) return;
+    busy = true;
+    $('#sendBtn').disabled = true;
+    $('#emptyState')?.remove();
+    input.value = ''; input.style.height = 'auto';
+    addUser(q);
+    const shell = addAssistant();
+    shell.body.innerHTML = '<span class="dots" aria-label="Thinking"><span></span><span></span><span></span></span>';
+    toBottom();
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q, collection: collection() || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(errMsg(data.detail) || `Request failed (${res.status})`);
+      await reveal(shell.body, data.answer, data.sources);
+      shell.extra.innerHTML = sourcesHtml(data.sources);
+      updateMoments(data.sources);
+      if (data.sources.length) $('#playerPanel').classList.remove('hidden');
+    } catch (err) {
+      shell.body.innerHTML = `<p style="color:var(--bad)">${esc(err.message)}</p>`;
+    } finally {
+      busy = false;
+      $('#sendBtn').disabled = false;
+      toBottom();
+      input.focus();
+    }
+  }
+  $('#chatForm').addEventListener('submit', e => { e.preventDefault(); send(); });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+  input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; });
+  $('#collectionInput').addEventListener('change', loadLibrary);
+
+  // ── boot ───────────────────────────────────────────────────────────────────
+  icons();
+  loadStatus().then(loadLibrary);
+})();
+</script>
+</body>
+</html>
